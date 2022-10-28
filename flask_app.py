@@ -84,7 +84,7 @@ def load_file(parcel_type):
     if parcel_type not in ('zu', 'oks'):
         return {'status': 'bad', 'error': 'parcel_type not supported'}
     folder = Path(Config.UPLOAD_FOLDER, user)
-    gdf = gpd.read_file(folder)
+    gdf = gpd.read_file(folder).to_crs(4326)
     gdf.to_postgis(parcel_type, ENGINE, if_exists='append', index=False,
         dtype={'geometry': Geometry(geometry_type='MULTIPOLYGON', srid=4326)})
     return {'status': 'ok'}
