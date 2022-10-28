@@ -1,0 +1,8 @@
+Flask==2.0.3
+Flask-Cors==3.0.10
+GeoAlchemy2==0.10.2
+geopandas==0.8.2
+passlib==1.7.4
+python-dotenv==0.19.2
+SQLAlchemy==1.4.32
+Werkzeug==2.0.3
