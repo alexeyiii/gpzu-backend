@@ -5,9 +5,11 @@ import time
 from werkzeug.utils import secure_filename
 from pathlib import Path
 import geopandas as gpd
+from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.ext.declarative import declarative_base
 from geoalchemy2 import Geometry
 
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 import utils
@@ -16,9 +18,16 @@ from config import Config, ENGINE
 
 app = Flask(__name__)
 cors = CORS(app)
-
-
 client = app.test_client()
+
+session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=ENGINE))
+
+
+Base = declarative_base()
+Base.query = session.query_property()
+
+from models import *
+
 app.config.from_object(Config)
 
 logger = utils.get_logger(__name__)
@@ -42,6 +51,11 @@ def reqtear(error = None):
         user = " by " + request.headers.get('User') if request.headers.get('User') else " by unknown_user"
         logger.exception('error: %s %s%s in %.5fs:\n%s', request.method, request.path, user,
                          time.time() - request.beg, error)
+
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    session.remove()
 
 
 @app.route("/api")
