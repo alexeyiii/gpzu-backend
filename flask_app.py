@@ -102,3 +102,25 @@ def load_file(parcel_type):
     gdf.to_postgis(parcel_type, ENGINE, if_exists='append', index=False,
         dtype={'geometry': Geometry(geometry_type='MULTIPOLYGON', srid=4326)})
     return {'status': 'ok'}
+
+
+@app.route("/api/search", methods=['GET'])
+def search():
+    pattern = request.args.get('pattern').lower().strip()
+    matches = AllParcels.query.filter(
+        (AllParcels.cn.ilike(f'{pattern}%')) | 
+        (AllParcels.cn.ilike(f'%{pattern}%')) | 
+        (AllParcels.cn.ilike(f'%{pattern}'))
+    ).limit(5)
+    serialized = []
+    for row in matches:
+        serialized.append({
+            'cadnumber': row.cn,
+            'p_type': row.p_type
+        })
+    return jsonify(serialized)
+
+
+
+if __name__ == "__main__":
+    app.run()
