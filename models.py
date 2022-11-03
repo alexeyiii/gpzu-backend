@@ -19,7 +19,7 @@ class ZuLayer(Base):
     area_value = db.Column(db.Float, nullable=True) 
     kvartal = db.Column(db.String(250), nullable=True)
     area_type = db.Column(db.String(250), nullable=True)
-    cn = db.Column(db.String(250), nullable=True)
+    cadnum = db.Column(db.String(250), nullable=True)
     util_by_doc = db.Column(db.String(250), nullable=True)
     geometry = db.Column(Geometry(geometry_type='MULTIPOLYGON'))
 
