@@ -101,7 +101,7 @@ def load_file(parcel_type):
         return {'status': 'bad', 'error': 'parcel_type not supported'}
     folder = Path(Config.UPLOAD_FOLDER, user)
     gdf = gpd.read_file(folder).to_crs(4326)
-    gdf.to_postgis(parcel_type, ENGINE, if_exists='append', index=False,
+    gdf.to_postgis(parcel_type, ENGINE, if_exists='append', index=False, schema='gpzu_ninja',
         dtype={'geometry': Geometry(geometry_type='MULTIPOLYGON', srid=4326)})
     return {'status': 'ok'}
 
@@ -176,13 +176,17 @@ def calculate_krt():
 @app.route('/api/layer/<layer_name>', methods=['POST'])
 def return_layer(layer_name):
     data = json.loads(request.data)
-    if layer_name not in ('zu', 'oks', 'okn', 'szz', 'start_area'):
+    if layer_name not in ('zu', 'oks', 'nerazgr', 'okn', 'szz', 'start_area'):
         return {}
     if len(data) > 0:
         cn_list = "('%s')" % data[0] if len(data) == 1 else str(tuple(data))
         layer = gpd.read_postgis("""
-            select * from gpzu_ninja.%s where cadnum in %s
-        """ % (layer_name, cn_list), ENGINE, geom_col='geometry', crs=4326)
+            select *, '%s' as layer_name from gpzu_ninja.%s where cadnum in %s
+        """ % (layer_name, layer_name, cn_list), ENGINE, geom_col='geometry', crs=4326)
+    elif len(data) == 0 and layer_name in ('nerazgr', 'okn', 'szz', 'start_area'):
+        layer = gpd.read_postgis("""
+            select *, '%s' as layer_name from gpzu_ninja.%s
+        """ % (layer_name, layer_name), ENGINE, geom_col='geometry', crs=4326)
     else:
         layer = gpd.GeoDataFrame({'geometry':[]})
     return layer.to_json()
