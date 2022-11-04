@@ -1,7 +1,9 @@
 import logging
+import numpy as np
 from shapely.ops import unary_union
 from shapely.geometry import Polygon, MultiPolygon
 from geopandas import GeoDataFrame, sjoin
+from pandas import Series
 
 def get_logger(name):
     logger = logging.getLogger(name)
@@ -19,17 +21,39 @@ def get_logger(name):
 
 
 def calculate_criteria(gdf, criteria, parcel_type):
-    total_rights = 1
+    l = criteria['living']
+    n_l = criteria['non_living']
     if parcel_type == 'zu':
-        total_living = 1
-        total_labour = 1
-        total_ownership = 0.55
-    elif parcel_type == 'oks':
-        total_living = 0.55
-        total_labour = 0.55
-        total_ownership = 1
-    total_index = total_living * total_labour * total_rights * total_ownership
-    return round(total_index, 4)
+        z = l['parcel_rent'] * gdf['parcel_rent'] + l['parcel_owned'] * gdf['parcel_owned'] + l['parcel_vri'] * gdf['parcel_vri']
+        total_zu = l['total_parcel'] * z
+
+        r = l['okn'] * gdf['okn'] + l['szz'] * gdf['szz'] + l['rental'] * gdf['rental']
+        total_rights = l['total_rights'] * r
+
+        total_index = total_zu * total_rights
+    
+    if parcel_type == 'oks':
+        columns = ['accident', 'labour_small', 'labour_medium', 'labour_large', 'okn', 'szz', 'rental']
+        for col in columns:
+            gdf[col] = np.where(gdf['living'] == True, l[col] * gdf[col], n_l[col] * gdf[col])
+        gdf['rennovation'] = np.where(gdf['living'] == True, l['rennovation'] * gdf['rennovation'], n_l['non_vri'] * gdf['non_vri'])
+        gdf['typical'] = np.where(gdf['living'] == True, l['typical'] * gdf['typical'], n_l['samovol'] * gdf['samovol'])
+        total_living = np.where(gdf['living'] == True, 
+            l['total_living'] * (gdf['accident'] + gdf['rennovation'] + gdf['typical']), 
+            n_l['total_non_living'] * (gdf['accident'] + gdf['rennovation'] + gdf['typical'])
+        )
+        total_labour = np.where(gdf['living'] == True, 
+            l['total_rights'] * (gdf['labour_small'] + gdf['labour_medium'] + gdf['labour_large']), 
+            n_l['total_rights'] * (gdf['labour_small'] + gdf['labour_medium'] + gdf['labour_large'])
+        )
+        total_rights = np.where(gdf['living'] == True, 
+            l['total_rights'] * (gdf['okn'] + gdf['szz'] + gdf['rental']), 
+            n_l['total_rights'] * (gdf['okn'] + gdf['szz'] + gdf['rental'])
+        )
+
+        total_index = Series(total_living * total_labour * total_rights)
+    
+    return total_index
 
 
 def dissolve_geometry(gdf):
@@ -38,10 +62,10 @@ def dissolve_geometry(gdf):
     geometry = MultiPolygon(geometry_rows)
     new_geom = unary_union(geometry.buffer(0)) #.00005
     if isinstance(new_geom, Polygon):
-        empty_attrs = ['']
+        empty_attrs = ['krt']
     else:
-        empty_attrs = ['' for i in  range(len(new_geom))]
-    d = {'zu_list': empty_attrs, 'oks_list': empty_attrs, 'geometry': new_geom}
+        empty_attrs = ['krt' for i in  range(len(new_geom))]
+    d = {'layer_name': empty_attrs, 'geometry': new_geom}
     gdf = GeoDataFrame(d, crs="EPSG:4326")
     return gdf
 

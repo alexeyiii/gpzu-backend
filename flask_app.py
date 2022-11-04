@@ -114,11 +114,11 @@ def calculate_krt():
     params = request.args
     [l, t, r, b] = [float(x) for x in params.get('bbox').split(',')]
     zu = gpd.read_postgis("""
-        select descr, 'zu' as layer_name, shape_area, cadnum, geometry from gpzu_ninja.zu
+        select * from gpzu_ninja.zu
         where gpzu_ninja.zu.geometry && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
     """ %(t, l, b, r), ENGINE, geom_col='geometry', crs=4326)
     oks = gpd.read_postgis("""
-        select cadnum, 'oks' as layer_name, geometry from gpzu_ninja.oks
+        select * from gpzu_ninja.oks
         where gpzu_ninja.oks.geometry && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
     """ %(t, l, b, r), ENGINE, geom_col='geometry', crs=4326)
     coordinates = Polygon(polygon["features"][0]["geometry"]['coordinates'][0])
@@ -126,15 +126,28 @@ def calculate_krt():
     int_zu = gpd.sjoin(zu, polygon, op='intersects').query('index_right == 0').drop(columns=['index_right'])
     print('int_zu', int_zu.shape)
     int_zu['total_index'] = calculate_criteria(int_zu, criteria, 'zu')
-    zu_included = int_zu.query("total_index >= 0.5")
-    zu_discussed = int_zu.query("0.19 <= total_index < 0.5")
-    print(zu_included['cadnum'].dropna().to_list())
+    zu_included = int_zu.query("total_index >= 50")
+    zu_discussed = int_zu.query("19 <= total_index < 50")
     ##выборка оксов по отобранным зу
-    int_oks = gpd.sjoin(oks, zu_included, op='intersects').query('index_right == 0').drop(columns=['index_right', 'cadnum_right'])
+    int_oks = gpd.sjoin(oks, zu_included, op='intersects').query('index_right == 0').drop(
+        columns=['index_right', 'cadnum_right', 'okn_right', 'descr_right', 'kvartal_cn_right', 
+        'kvartal_cn_right', 'cad_cost_right', 'id_right', 'address_right', 'area_value_right', 'kvartal_right', 
+        'fid_right', 'kol_mest_right', 'okn_right', 'szz_right', 'samovol_right', 'rental_right']
+    )
     print('int_oks', int_oks.shape)
+    int_oks.columns = ['cadnum', 'address', 'Area', 'descr', 'area_value',
+       'cad_cost', 'cc_date_entering', 'cn', 'floors', 'id',
+       'kvartal', 'kvartal_cn', 'name', 'oks_type', 'purpose',
+       'purpose_name', 'reg_date', 'year_built', 'geometry', 'fid',
+       'szz', 'kol_mest', 'okn', 'accident', 'rennovation',
+       'typical', 'labour_small', 'labour_medium', 'labour_large',
+       'samovol', 'living', 'rental', 'non_vri', 'has_effecct',
+       'property_t', 'shape_area', 'cc_date_entering_right', 'category_type',
+       'area_type', 'util_by_doc', 'parcel_rent',
+       'parcel_owned', 'parcel_vri', 'type', 'features', 'total_index']
     int_oks['total_index'] = calculate_criteria(int_oks, criteria, 'oks')
-    oks_included = int_oks.query("total_index >= 0.5")
-    oks_discussed = int_oks.query("0.19 <= total_index < 0.5")
+    oks_included = int_oks.query("total_index >= 50")
+    oks_discussed = int_oks.query("19 <= total_index < 50")
     print(len(zu_included), len(oks_included))
     #собираем сдисолвленный слой из геометрии и вычисленных атрибутов
     if len(zu_included) > 0:
@@ -145,10 +158,14 @@ def calculate_krt():
         #посчитать площадь крт
     else:
         krt = gpd.GeoDataFrame({'geometry':[]})
+    zu_list = zu_included['cadnum'].dropna().to_list()
+    zu_list.sort()
+    oks_list = oks_included['cadnum'].dropna().to_list()
+    oks_list.sort()
     result = {
         'krt': krt.to_json(),
-        'zu': zu_included['cadnum'].dropna().to_list(),
-        'oks': oks_included['cadnum_left'].dropna().to_list(),
+        'zu': zu_list,
+        'oks': oks_list,
         'zu_discussed': zu_discussed.to_json(),
         'oks_discussed': oks_discussed.to_json(),
     }
