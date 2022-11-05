@@ -1,4 +1,5 @@
 import logging
+import csv
 import numpy as np
 from shapely.ops import unary_union
 from shapely.geometry import Polygon, MultiPolygon
@@ -36,39 +37,38 @@ def calculate_criteria(gdf, criteria, parcel_type):
         r = l['okn'] * gdf['okn'] + l['szz'] * gdf['szz'] + l['rental'] * gdf['rental']
         total_rights = l['total_rights'] * r
 
-        total_index = total_zu * total_rights
-
-        #gdf['total_zu'] = total_zu
-        #gdf['total_rights'] = total_rights
-        #gdf['total_index'] = total_index
-        #gdf.to_excel(Path(Config.UPLOAD_FOLDER, 'output_zu.xlsx'))
+        total_index = total_zu + total_rights
     
     if parcel_type == 'oks':
         columns = ['accident', 'labour_small', 'labour_medium', 'labour_large', 'okn', 'szz', 'rental']
         for col in columns:
-            gdf[col] = np.where(gdf['living'] == True, l[col] * gdf[col], n_l[col] * gdf[col])
-        gdf['rennovation'] = np.where(gdf['living'] == True, l['rennovation'] * gdf['rennovation'], n_l['non_vri'] * gdf['non_vri'])
-        gdf['typical'] = np.where(gdf['living'] == True, l['typical'] * gdf['typical'], n_l['samovol'] * gdf['samovol'])
-        total_living = np.where(gdf['living'] == True, 
+            gdf[col] = np.where(gdf['living'] == 1, l[col] * gdf[col], n_l[col] * gdf[col])
+        gdf['rennovation'] = np.where(gdf['living'] == 1, 
+            l['rennovation'] * gdf['rennovation'], n_l['non_vri'] * gdf['non_vri']
+        )
+        gdf['typical'] = np.where(gdf['living'] == 1, 
+            l['typical'] * gdf['typical'], n_l['samovol'] * gdf['samovol']
+        )
+        total_living = np.where(gdf['living'] == 1, 
             l['total_living'] * (gdf['accident'] + gdf['rennovation'] + gdf['typical']), 
             n_l['total_non_living'] * (gdf['accident'] + gdf['rennovation'] + gdf['typical'])
         )
-        total_labour = np.where(gdf['living'] == True, 
+        total_labour = np.where(gdf['living'] == 1, 
             l['total_labour'] * (gdf['labour_small'] + gdf['labour_medium'] + gdf['labour_large']), 
             n_l['total_labour'] * (gdf['labour_small'] + gdf['labour_medium'] + gdf['labour_large'])
         )
-        total_rights = np.where(gdf['living'] == True, 
+        total_rights = np.where(gdf['living'] == 1, 
             l['total_rights'] * (gdf['okn'] + gdf['szz'] + gdf['rental']), 
             n_l['total_rights'] * (gdf['okn'] + gdf['szz'] + gdf['rental'])
         )
 
-        total_index = Series(total_living * total_labour * total_rights)
+        total_index = Series(total_living + total_labour + total_rights)
 
-        #gdf['total_living'] = total_living
-        #gdf['total_labour'] = total_labour
-        #gdf['total_rights'] = total_rights
-        #gdf['total_index'] = total_index
-        #gdf.to_excel(Path(Config.UPLOAD_FOLDER, 'output_oks.xlsx'))
+        gdf['total_living'] = total_living
+        gdf['total_labour'] = total_labour
+        gdf['total_rights'] = total_rights
+        gdf['total_index'] = total_index
+        gdf.to_excel(Path(Config.UPLOAD_FOLDER, 'output_oks.xlsx'))
     
     return total_index
 

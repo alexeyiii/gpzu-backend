@@ -37,6 +37,9 @@ app.config.from_object(Config)
 
 logger = get_logger(__name__)
 
+oks_dict = {'cadnum_left': 'cadnum', 'address_left': 'address', 'Area': 'Area', 'descr_left': 'descr', 'area_value_left': 'area_value', 'cad_cost_left': 'cad_cost', 'cc_date_entering_left': 'cc_date_entering', 'cn': 'cn', 'floors': 'floors', 'id_left': 'id', 'kvartal_left': 'kvartal', 'kvartal_cn_left': 'kvartal_cn', 'name': 'name', 'oks_type': 'oks_type', 'purpose': 'purpose', 'purpose_name': 'purpose_name', 'reg_date': 'reg_date', 'year_built': 'year_built', 'geometry': 'geometry', 'fid_left': 'fid', 'szz_left': 'szz', 'kol_mest_left': 'kol_mest', 'okn_left': 'okn', 'accident': 'accident', 'rennovation': 'rennovation', 'typical': 'typical', 'labour_small': 'labour_small', 'labour_medium': 'labour_medium', 'labour_large': 'labour_large', 'samovol_left': 'samovol', 'living': 'living', 'rental_left': 'rental', 'non_vri': 'non_vri', 'has_effecct': 'has_effecct', 'property_t': 'property_t', 'shape_area': 'shape_area', 'cc_date_entering_right': 'cc_date_entering_right', 'category_type': 'category_type', 'area_type': 'area_type', 'util_by_doc': 'util_by_doc', 'parcel_rent': 'parcel_rent', 'parcel_owned': 'parcel_owned', 'parcel_vri': 'parcel_vri', 'total_index': 'type'}
+property_t = {'0': 'информация о собственности отсутствует', '1': 'Москва', '2': 'РФ', '3': 'Иная', '5':'Неразграниченная'}
+
 @app.before_request
 def reqbeg():
     request.beg = time.time()
@@ -132,21 +135,23 @@ def calculate_krt():
     data = json.loads(request.data)
     polygon = data['polygon']
     criteria = data['criteria']
-    params = request.args
-    [l, t, r, b] = [float(x) for x in params.get('bbox').split(',')]
-    zu = gpd.read_postgis("""
-        select * from gpzu_ninja.zu
-        where gpzu_ninja.zu.geometry && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
-    """ %(t, l, b, r), ENGINE, geom_col='geometry', crs=4326)
-    oks = gpd.read_postgis("""
-        select * from gpzu_ninja.oks
-        where gpzu_ninja.oks.geometry && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
-    """ %(t, l, b, r), ENGINE, geom_col='geometry', crs=4326)
     coordinates = Polygon(polygon["features"][0]["geometry"]['coordinates'][0])
     polygon = gpd.GeoDataFrame(polygon, geometry=[coordinates], index=[0]).set_crs(4326)
-    print(list(polygon.geometry)[0].wkt)
-    int_zu = gpd.sjoin(zu, polygon, op='intersects').query('index_right == 0').drop(columns=['index_right'])
+    p = list(polygon.geometry)[0].wkt
+    start = time.perf_counter_ns()
+    int_zu = gpd.read_postgis("""
+        select * from gpzu_ninja.zu where ST_Intersects(zu.geometry, 'SRID=4326;%s')
+    """ % p, ENGINE, geom_col='geometry', crs=4326).fillna(0)
+    logger.info(f"{round((time.perf_counter_ns() - start)/10**9, 2)} sec. for zu load")
+    oks = gpd.read_postgis("""
+        select * from gpzu_ninja.oks where ST_Intersects(oks.geometry, 'SRID=4326;%s')
+    """ % p, ENGINE, geom_col='geometry', crs=4326).fillna(0)
+
     int_zu['total_index'] = calculate_criteria(int_zu, criteria, 'zu')
+    int_zu['property_t'] = int_zu.apply(lambda row: property_t[str(row['property_t'])], axis=1)
+    #int_zu['category_type'] = int_zu.apply(lambda row: cat[row['category_type']], axis=1)
+    
+    #Отбор объектов
     zu_included = int_zu.query("total_index >= 0.5")
     zu_discussed = int_zu.query("0.19 <= total_index < 0.5")
     ##выборка оксов по отобранным зу
@@ -155,32 +160,25 @@ def calculate_krt():
         'kvartal_cn_right', 'cad_cost_right', 'id_right', 'address_right', 'area_value_right', 'kvartal_right', 
         'fid_right', 'kol_mest_right', 'okn_right', 'szz_right', 'samovol_right', 'rental_right']
     )
-    int_oks.columns = ['cadnum', 'address', 'Area', 'descr', 'area_value',
-       'cad_cost', 'cc_date_entering', 'cn', 'floors', 'id',
-       'kvartal', 'kvartal_cn', 'name', 'oks_type', 'purpose',
-       'purpose_name', 'reg_date', 'year_built', 'geometry', 'fid',
-       'szz', 'kol_mest', 'okn', 'accident', 'rennovation',
-       'typical', 'labour_small', 'labour_medium', 'labour_large',
-       'samovol', 'living', 'rental', 'non_vri', 'has_effecct',
-       'property_t', 'shape_area', 'cc_date_entering_right', 'category_type',
-       'area_type', 'util_by_doc', 'parcel_rent',
-       'parcel_owned', 'parcel_vri', 'type', 'features', 'total_index']
+    int_oks = int_oks.rename(oks_dict, axis=1)
     int_oks['total_index'] = calculate_criteria(int_oks, criteria, 'oks')
     oks_included = int_oks.query("total_index >= 0.5")
     oks_discussed = int_oks.query("0.19 <= total_index < 0.5")
     print(len(zu_included), len(oks_included))
 
-    print('int_zu : %s. included: %s, %s discussed' % (int_zu.shape, len(zu_included), len(zu_discussed)))
-    print('int_oks : %s. included: %s, %s discussed' % (int_oks.shape, len(oks_included), len(oks_discussed)))
+    logger.info('int_zu : %s. included: %s, %s discussed' % (int_zu.shape, len(zu_included), len(zu_discussed)))
+    logger.info('int_oks : %s. included: %s, %s discussed' % (int_oks.shape, len(oks_included), len(oks_discussed)))
+    
     #собираем сдисолвленный слой из геометрии и вычисленных атрибутов
-    int_zu['fid'] = int_zu['fid'].astype('int64')
-    int_zu.to_file(Path(Config.UPLOAD_FOLDER, 'output_zu.gpkg'), driver="GPKG")
+    zu_included['fid'] = zu_included['fid'].astype('int64')
+    zu_included.to_file(Path(Config.UPLOAD_FOLDER, 'output_zu.gpkg'), driver="GPKG")
     oks['fid'] = oks['fid'].astype('int64')
+    oks['total_index'] = calculate_criteria(oks, criteria, 'oks')
     oks.to_file(Path(Config.UPLOAD_FOLDER, 'output_oks.gpkg'), driver="GPKG")
+
     if len(zu_included) > 0:
         krt = dissolve_geometry(zu_included)
         print('krt', krt.shape)
-        krt.to_excel(Path(Config.UPLOAD_FOLDER, 'output_krt.xlsx'))
         #krt['zu_list'] = [parcels_in_boundaries(x, zu_included) for x in krt['geometry']]
         #krt['oks_list'] = [parcels_in_boundaries(x, oks_included) for x in krt['geometry']]
         #посчитать площадь крт
@@ -204,17 +202,20 @@ def calculate_krt():
 @app.route('/api/layer/<layer_name>', methods=['POST'])
 def return_layer(layer_name):
     data = json.loads(request.data)
+    params = request.args
     if layer_name not in ('zu', 'oks', 'nerazgr', 'okn', 'szz', 'start_area'):
         return {}
-    if len(data) > 0:
+    if layer_name in ('zu', 'oks') and len(data) > 0:
         cn_list = "('%s')" % data[0] if len(data) == 1 else str(tuple(data))
         layer = gpd.read_postgis("""
             select *, '%s' as layer_name from gpzu_ninja.%s where cadnum in %s
         """ % (layer_name, layer_name, cn_list), ENGINE, geom_col='geometry', crs=4326)
-    elif len(data) == 0 and layer_name in ('nerazgr', 'okn', 'szz', 'start_area'):
+    elif layer_name in ('nerazgr', 'okn', 'szz', 'start_area'):
+        [l, t, r, b] = [float(x) for x in params.get('bbox').split(',')]
         layer = gpd.read_postgis("""
             select *, '%s' as layer_name from gpzu_ninja.%s
-        """ % (layer_name, layer_name), ENGINE, geom_col='geometry', crs=4326)
+            where gpzu_ninja.%s.geometry && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
+        """ % (layer_name, layer_name, layer_name, l, t,r, b), ENGINE, geom_col='geometry', crs=4326)
     else:
         layer = gpd.GeoDataFrame({'geometry':[]})
     return layer.to_json()
