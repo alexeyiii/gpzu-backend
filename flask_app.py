@@ -80,7 +80,7 @@ def upload_file():
         #проверка разных расширений
         for pattern in Config.ALLOWED_EXTENSIONS:
             if filename.endswith(pattern):
-            f.save(str(directory / filename))
+                f.save(str(directory / filename))
     return {'message': 'ok'}
 
 
@@ -92,11 +92,11 @@ def remove_file(filename):
     #проверка разных расширений
     for pattern in Config.ALLOWED_EXTENSIONS:
         if filename.endswith(pattern):
-        try:
-            os.remove(file)
-            return {"status": "ok"}
-        except:
-            return {"status": "bad"}
+            try:
+                os.remove(file)
+                return {"status": "ok"}
+            except:
+                return {"status": "bad"}
     return {"status": "bad"}
 
 
@@ -114,7 +114,7 @@ def load_file():
             layer= Path(file).name.split(".")[0]
             print(layer)
             gdf.to_postgis(layer, ENGINE, if_exists='append', index=False, schema='gpzu_ninja',
-        dtype={'geometry': Geometry(geometry_type='MULTIPOLYGON', srid=4326)})
+                dtype={'geometry': Geometry(geometry_type='MULTIPOLYGON', srid=4326)})
             logger.info(f'success with file {layer}')
         except:
             result['messages'].append(f"Не удалось загрузить файл {file}")
@@ -144,18 +144,17 @@ def calculate_krt():
     """ %(t, l, b, r), ENGINE, geom_col='geometry', crs=4326)
     coordinates = Polygon(polygon["features"][0]["geometry"]['coordinates'][0])
     polygon = gpd.GeoDataFrame(polygon, geometry=[coordinates], index=[0]).set_crs(4326)
+    print(list(polygon.geometry)[0].wkt)
     int_zu = gpd.sjoin(zu, polygon, op='intersects').query('index_right == 0').drop(columns=['index_right'])
-    print('int_zu', int_zu.shape)
     int_zu['total_index'] = calculate_criteria(int_zu, criteria, 'zu')
-    zu_included = int_zu.query("total_index >= 50")
-    zu_discussed = int_zu.query("19 <= total_index < 50")
+    zu_included = int_zu.query("total_index >= 0.5")
+    zu_discussed = int_zu.query("0.19 <= total_index < 0.5")
     ##выборка оксов по отобранным зу
     int_oks = gpd.sjoin(oks, zu_included, op='intersects').query('index_right == 0').drop(
         columns=['index_right', 'cadnum_right', 'okn_right', 'descr_right', 'kvartal_cn_right', 
         'kvartal_cn_right', 'cad_cost_right', 'id_right', 'address_right', 'area_value_right', 'kvartal_right', 
         'fid_right', 'kol_mest_right', 'okn_right', 'szz_right', 'samovol_right', 'rental_right']
     )
-    print('int_oks', int_oks.shape)
     int_oks.columns = ['cadnum', 'address', 'Area', 'descr', 'area_value',
        'cad_cost', 'cc_date_entering', 'cn', 'floors', 'id',
        'kvartal', 'kvartal_cn', 'name', 'oks_type', 'purpose',
@@ -167,13 +166,21 @@ def calculate_krt():
        'area_type', 'util_by_doc', 'parcel_rent',
        'parcel_owned', 'parcel_vri', 'type', 'features', 'total_index']
     int_oks['total_index'] = calculate_criteria(int_oks, criteria, 'oks')
-    oks_included = int_oks.query("total_index >= 50")
-    oks_discussed = int_oks.query("19 <= total_index < 50")
+    oks_included = int_oks.query("total_index >= 0.5")
+    oks_discussed = int_oks.query("0.19 <= total_index < 0.5")
     print(len(zu_included), len(oks_included))
+
+    print('int_zu : %s. included: %s, %s discussed' % (int_zu.shape, len(zu_included), len(zu_discussed)))
+    print('int_oks : %s. included: %s, %s discussed' % (int_oks.shape, len(oks_included), len(oks_discussed)))
     #собираем сдисолвленный слой из геометрии и вычисленных атрибутов
+    int_zu['fid'] = int_zu['fid'].astype('int64')
+    int_zu.to_file(Path(Config.UPLOAD_FOLDER, 'output_zu.gpkg'), driver="GPKG")
+    oks['fid'] = oks['fid'].astype('int64')
+    oks.to_file(Path(Config.UPLOAD_FOLDER, 'output_oks.gpkg'), driver="GPKG")
     if len(zu_included) > 0:
         krt = dissolve_geometry(zu_included)
         print('krt', krt.shape)
+        krt.to_excel(Path(Config.UPLOAD_FOLDER, 'output_krt.xlsx'))
         #krt['zu_list'] = [parcels_in_boundaries(x, zu_included) for x in krt['geometry']]
         #krt['oks_list'] = [parcels_in_boundaries(x, oks_included) for x in krt['geometry']]
         #посчитать площадь крт

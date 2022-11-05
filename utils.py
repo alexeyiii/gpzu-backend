@@ -5,6 +5,9 @@ from shapely.geometry import Polygon, MultiPolygon
 from geopandas import GeoDataFrame, sjoin
 from pandas import Series
 
+from config import Config
+from pathlib import Path
+
 def get_logger(name):
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
@@ -21,6 +24,9 @@ def get_logger(name):
 
 
 def calculate_criteria(gdf, criteria, parcel_type):
+    for k, v in criteria.items():
+        for key, value in v.items():
+            criteria[k][key] = int(value)/100
     l = criteria['living']
     n_l = criteria['non_living']
     if parcel_type == 'zu':
@@ -31,6 +37,11 @@ def calculate_criteria(gdf, criteria, parcel_type):
         total_rights = l['total_rights'] * r
 
         total_index = total_zu * total_rights
+
+        #gdf['total_zu'] = total_zu
+        #gdf['total_rights'] = total_rights
+        #gdf['total_index'] = total_index
+        #gdf.to_excel(Path(Config.UPLOAD_FOLDER, 'output_zu.xlsx'))
     
     if parcel_type == 'oks':
         columns = ['accident', 'labour_small', 'labour_medium', 'labour_large', 'okn', 'szz', 'rental']
@@ -43,8 +54,8 @@ def calculate_criteria(gdf, criteria, parcel_type):
             n_l['total_non_living'] * (gdf['accident'] + gdf['rennovation'] + gdf['typical'])
         )
         total_labour = np.where(gdf['living'] == True, 
-            l['total_rights'] * (gdf['labour_small'] + gdf['labour_medium'] + gdf['labour_large']), 
-            n_l['total_rights'] * (gdf['labour_small'] + gdf['labour_medium'] + gdf['labour_large'])
+            l['total_labour'] * (gdf['labour_small'] + gdf['labour_medium'] + gdf['labour_large']), 
+            n_l['total_labour'] * (gdf['labour_small'] + gdf['labour_medium'] + gdf['labour_large'])
         )
         total_rights = np.where(gdf['living'] == True, 
             l['total_rights'] * (gdf['okn'] + gdf['szz'] + gdf['rental']), 
@@ -52,6 +63,12 @@ def calculate_criteria(gdf, criteria, parcel_type):
         )
 
         total_index = Series(total_living * total_labour * total_rights)
+
+        #gdf['total_living'] = total_living
+        #gdf['total_labour'] = total_labour
+        #gdf['total_rights'] = total_rights
+        #gdf['total_index'] = total_index
+        #gdf.to_excel(Path(Config.UPLOAD_FOLDER, 'output_oks.xlsx'))
     
     return total_index
 
