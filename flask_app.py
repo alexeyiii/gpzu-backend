@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 
 import os
+import shutil
 import time
 import json
+import glob
+from itertools import chain
 from werkzeug.utils import secure_filename
 from pathlib import Path
 import geopandas as gpd
@@ -69,23 +72,26 @@ def hello():
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
-    user = request.headers.get('pid')
+    user = request.headers.get('User')
     directory = Path(Config.UPLOAD_FOLDER, user)
+    directory.mkdir(exist_ok=True, parents=True)
     for f in request.files.getlist('file'):
         filename = secure_filename(f.filename)
         #проверка разных расширений
-        if filename.endswith('.zip') or filename.endswith('.gpkg'):
+        for pattern in Config.ALLOWED_EXTENSIONS:
+            if filename.endswith(pattern):
             f.save(str(directory / filename))
     return {'message': 'ok'}
 
 
 @app.route('/api/remove/<filename>', methods=['GET'])
 def remove_file(filename):
-    user = request.headers.get('pid')
+    user = request.headers.get('User')
     filename = secure_filename(filename)
     file = Path(Config.UPLOAD_FOLDER, user, filename)
     #проверка разных расширений
-    if filename.endswith('.zip') or filename.endswith('.gpkg'):
+    for pattern in Config.ALLOWED_EXTENSIONS:
+        if filename.endswith(pattern):
         try:
             os.remove(file)
             return {"status": "ok"}
@@ -94,16 +100,31 @@ def remove_file(filename):
     return {"status": "bad"}
 
 
-@app.route('/api/load_data/<parcel_type>', methods=['GET'])
-def load_file(parcel_type):
-    user = request.headers.get('pid')
-    if parcel_type not in ('zu', 'oks'):
-        return {'status': 'bad', 'error': 'parcel_type not supported'}
+@app.route('/api/load_data', methods=['GET'])
+def load_file():
+    user = request.headers.get('User')
+    result = {'status': 'ok', 'messages': []}  
     folder = Path(Config.UPLOAD_FOLDER, user)
-    gdf = gpd.read_file(folder).to_crs(4326)
-    gdf.to_postgis(parcel_type, ENGINE, if_exists='append', index=False, schema='gpzu_ninja',
+    shapefiles = glob.iglob(str(folder) + '/*.shp')
+    geopackages = glob.iglob(str(folder) + '/*.gpkg')
+    files = chain(shapefiles, geopackages) # generator
+    for file in files:
+        try:
+            gdf = gpd.read_file(file).to_crs(4326)
+            layer= Path(file).name.split(".")[0]
+            print(layer)
+            gdf.to_postgis(layer, ENGINE, if_exists='append', index=False, schema='gpzu_ninja',
         dtype={'geometry': Geometry(geometry_type='MULTIPOLYGON', srid=4326)})
-    return {'status': 'ok'}
+            logger.info(f'success with file {layer}')
+        except:
+            result['messages'].append(f"Не удалось загрузить файл {file}")
+            logger.info(f"Не удалось загрузить файл {file}")
+    if folder.exists():
+        try:
+            shutil.rmtree(folder)
+        except PermissionError:
+            print('cannot remove folder')
+    return result
 
 
 @app.route('/api/krt_in_boundaries', methods=['POST'])

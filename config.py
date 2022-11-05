@@ -13,5 +13,6 @@ class Config:
     DB_URI = 'postgresql://{}:{}@{}:{}/{}'.format(DB_USER, DB_PASS, DB_HOST, DB_PORT, DB_NAME)
     UPLOAD_FOLDER = os.path.dirname(os.path.realpath(__file__)) + '/upload/'
     CORS_ALLOWED_ORIGINS = ['http://localhost:4200']
+    ALLOWED_EXTENSIONS = ['.shp', '.dbf', '.prj', '.sbn', '.sbx', '.shx', '.shp.xml', '.gpkg']
 
 ENGINE = create_engine(Config.DB_URI)
