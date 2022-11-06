@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.ext.declarative import declarative_base
 from geoalchemy2 import Geometry
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory, abort
 from flask_cors import CORS
 
 from utils import *
@@ -237,6 +237,17 @@ def search():
         })
     return jsonify(serialized)
 
+
+@app.route("/api/file/<filename>", methods=['GET'])
+def return_file(filename):
+    if filename.endswith(".pdf"):
+        try:
+            return send_from_directory(directory=app.config['UPLOAD_FOLDER'], path=filename, as_attachment=True)
+        except FileNotFoundError:
+            logger.info('No file found')
+            abort(404)
+    else:
+        abort(404)
 
 
 if __name__ == "__main__":
