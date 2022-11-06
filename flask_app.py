@@ -38,7 +38,7 @@ app.config.from_object(Config)
 logger = get_logger(__name__)
 
 oks_dict = {'cadnum_left': 'cadnum', 'address_left': 'address', 'Area': 'Area', 'descr_left': 'descr', 'area_value_left': 'area_value', 'cad_cost_left': 'cad_cost', 'cc_date_entering_left': 'cc_date_entering', 'cn': 'cn', 'floors': 'floors', 'id_left': 'id', 'kvartal_left': 'kvartal', 'kvartal_cn_left': 'kvartal_cn', 'name': 'name', 'oks_type': 'oks_type', 'purpose': 'purpose', 'purpose_name': 'purpose_name', 'reg_date': 'reg_date', 'year_built': 'year_built', 'geometry': 'geometry', 'fid_left': 'fid', 'szz_left': 'szz', 'kol_mest_left': 'kol_mest', 'okn_left': 'okn', 'accident': 'accident', 'rennovation': 'rennovation', 'typical': 'typical', 'labour_small': 'labour_small', 'labour_medium': 'labour_medium', 'labour_large': 'labour_large', 'samovol_left': 'samovol', 'living': 'living', 'rental_left': 'rental', 'non_vri': 'non_vri', 'has_effecct': 'has_effecct', 'property_t': 'property_t', 'shape_area': 'shape_area', 'cc_date_entering_right': 'cc_date_entering_right', 'category_type': 'category_type', 'area_type': 'area_type', 'util_by_doc': 'util_by_doc', 'parcel_rent': 'parcel_rent', 'parcel_owned': 'parcel_owned', 'parcel_vri': 'parcel_vri', 'total_index': 'type'}
-property_t = {'0': 'информация о собственности отсутствует', '1': 'Москва', '2': 'РФ', '3': 'Иная', '5':'Неразграниченная'}
+
 
 @app.before_request
 def reqbeg():
@@ -148,7 +148,7 @@ def calculate_krt():
     """ % p, ENGINE, geom_col='geometry', crs=4326).fillna(0)
 
     int_zu['total_index'] = calculate_criteria(int_zu, criteria, 'zu')
-    int_zu['property_t'] = int_zu.apply(lambda row: property_t[str(row['property_t'])], axis=1)
+    int_zu['property_t'] = int_zu.apply(lambda row: set_property(row), axis=1)
     #int_zu['category_type'] = int_zu.apply(lambda row: cat[row['category_type']], axis=1)
     
     #Отбор объектов
@@ -171,10 +171,10 @@ def calculate_krt():
     
     #собираем сдисолвленный слой из геометрии и вычисленных атрибутов
     zu_included['fid'] = zu_included['fid'].astype('int64')
-    zu_included.to_file(Path(Config.UPLOAD_FOLDER, 'output_zu.gpkg'), driver="GPKG")
+    #zu_included.to_file(Path(Config.UPLOAD_FOLDER, 'output_zu.gpkg'), driver="GPKG")
     oks['fid'] = oks['fid'].astype('int64')
     oks['total_index'] = calculate_criteria(oks, criteria, 'oks')
-    oks.to_file(Path(Config.UPLOAD_FOLDER, 'output_oks.gpkg'), driver="GPKG")
+    #oks.to_file(Path(Config.UPLOAD_FOLDER, 'output_oks.gpkg'), driver="GPKG")
 
     if len(zu_included) > 0:
         krt = dissolve_geometry(zu_included)
@@ -207,6 +207,7 @@ def return_layer(layer_name):
         return {}
     if layer_name in ('zu', 'oks') and len(data) > 0:
         cn_list = "('%s')" % data[0] if len(data) == 1 else str(tuple(data))
+        print(layer_name)
         layer = gpd.read_postgis("""
             select *, '%s' as layer_name from gpzu_ninja.%s where cadnum in %s
         """ % (layer_name, layer_name, cn_list), ENGINE, geom_col='geometry', crs=4326)
@@ -238,14 +239,17 @@ def search():
     return jsonify(serialized)
 
 
+@app.route("/api/pdf", methods=['POST'])
+def create_pdf():
+    data = json.loads(request.data)
+    filename = make_pdf(data['zu'], data['oks'])
+    return {'status': 'ok', 'url': filename}
+
+
 @app.route("/api/file/<filename>", methods=['GET'])
 def return_file(filename):
-    if filename.endswith(".pdf"):
-        try:
-            return send_from_directory(directory=app.config['UPLOAD_FOLDER'], path=filename, as_attachment=True)
-        except FileNotFoundError:
-            logger.info('No file found')
-            abort(404)
+    if filename.endswith(".xlsx"):
+        return send_from_directory(directory=app.config['UPLOAD_FOLDER'], path=filename, as_attachment=True)
     else:
         abort(404)
 
