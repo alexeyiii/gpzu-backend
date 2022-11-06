@@ -167,7 +167,7 @@ def calculate_krt():
     )
     int_oks = int_oks.rename(oks_dict, axis=1)
 
-    int_oks['total_index'] = calculate_criteria(int_oks, criteria, 'oks')
+    #int_oks['total_index'] = calculate_criteria(int_oks, criteria, 'oks')
     oks_included = int_oks.query("total_index >= 0.5")
     oks_discussed = int_oks.query("0.19 <= total_index < 0.5")
     oks_discussed['layer_name'] = 'oks'
