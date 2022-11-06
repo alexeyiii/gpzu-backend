@@ -37,7 +37,7 @@ app.config.from_object(Config)
 
 logger = get_logger(__name__)
 
-oks_dict = {'cadnum_left': 'cadnum', 'address_left': 'address', 'Area': 'Area', 'descr_left': 'descr', 'area_value_left': 'area_value', 'cad_cost_left': 'cad_cost', 'cc_date_entering_left': 'cc_date_entering', 'cn': 'cn', 'floors': 'floors', 'id_left': 'id', 'kvartal_left': 'kvartal', 'kvartal_cn_left': 'kvartal_cn', 'name': 'name', 'oks_type': 'oks_type', 'purpose': 'purpose', 'purpose_name': 'purpose_name', 'reg_date': 'reg_date', 'year_built': 'year_built', 'geometry': 'geometry', 'fid_left': 'fid', 'szz_left': 'szz', 'kol_mest_left': 'kol_mest', 'okn_left': 'okn', 'accident': 'accident', 'rennovation': 'rennovation', 'typical': 'typical', 'labour_small': 'labour_small', 'labour_medium': 'labour_medium', 'labour_large': 'labour_large', 'samovol_left': 'samovol', 'living': 'living', 'rental_left': 'rental', 'non_vri': 'non_vri', 'has_effecct': 'has_effecct', 'property_t': 'property_t', 'shape_area': 'shape_area', 'cc_date_entering_right': 'cc_date_entering_right', 'category_type': 'category_type', 'area_type': 'area_type', 'util_by_doc': 'util_by_doc', 'parcel_rent': 'parcel_rent', 'parcel_owned': 'parcel_owned', 'parcel_vri': 'parcel_vri', 'total_index': 'type'}
+oks_dict = {'cadnum_left': 'cadnum', 'address_left': 'address', 'Area': 'Area', 'descr_left': 'descr', 'area_value_left': 'area_value', 'cad_cost_left': 'cad_cost', 'cc_date_entering_left': 'cc_date_entering', 'cn': 'cn', 'floors': 'floors', 'id_left': 'id', 'kvartal_left': 'kvartal', 'kvartal_cn_left': 'kvartal_cn', 'name': 'name', 'oks_type': 'oks_type', 'purpose': 'purpose', 'purpose_name': 'purpose_name', 'reg_date': 'reg_date', 'year_built': 'year_built', 'geometry': 'geometry', 'fid_left': 'fid', 'szz_left': 'szz', 'kol_mest_left': 'kol_mest', 'okn_left': 'okn', 'accident': 'accident', 'rennovation': 'rennovation', 'typical': 'typical', 'labour_small': 'labour_small', 'labour_medium': 'labour_medium', 'labour_large': 'labour_large', 'samovol_left': 'samovol', 'living': 'living', 'rental_left': 'rental', 'non_vri': 'non_vri', 'has_effecct': 'has_effecct', 'property_t': 'property_t', 'shape_area': 'shape_area', 'cc_date_entering_right': 'cc_date_entering_right', 'category_type': 'category_type', 'area_type': 'area_type', 'util_by_doc': 'util_by_doc', 'parcel_rent': 'parcel_rent', 'parcel_owned': 'parcel_owned', 'parcel_vri': 'parcel_vri', 'total_index_left': 'total_index'}
 
 
 @app.before_request
@@ -135,6 +135,9 @@ def calculate_krt():
     data = json.loads(request.data)
     polygon = data['polygon']
     criteria = data['criteria']
+    for k, v in criteria.items():
+        for key, value in v.items():
+            criteria[k][key] = int(value)/100
     coordinates = Polygon(polygon["features"][0]["geometry"]['coordinates'][0])
     polygon = gpd.GeoDataFrame(polygon, geometry=[coordinates], index=[0]).set_crs(4326)
     p = list(polygon.geometry)[0].wkt
@@ -146,42 +149,35 @@ def calculate_krt():
     oks = gpd.read_postgis("""
         select * from gpzu_ninja.oks where ST_Intersects(oks.geometry, 'SRID=4326;%s')
     """ % p, ENGINE, geom_col='geometry', crs=4326).fillna(0)
-
     int_zu['total_index'] = calculate_criteria(int_zu, criteria, 'zu')
     int_zu['property_t'] = int_zu.apply(lambda row: set_property(row), axis=1)
-    #int_zu['category_type'] = int_zu.apply(lambda row: cat[row['category_type']], axis=1)
-    
+
+
     #Отбор объектов
     zu_included = int_zu.query("total_index >= 0.5")
     zu_discussed = int_zu.query("0.19 <= total_index < 0.5")
+    zu_discussed['layer_name'] = 'zu'
+
     ##выборка оксов по отобранным зу
-    int_oks = gpd.sjoin(oks, zu_included, op='intersects').query('index_right == 0').drop(
+    oks['total_index'] = calculate_criteria(oks, criteria, 'oks')
+    int_oks = gpd.sjoin(oks, zu_included, op='intersects').query('index_right >= 0').drop(
         columns=['index_right', 'cadnum_right', 'okn_right', 'descr_right', 'kvartal_cn_right', 
         'kvartal_cn_right', 'cad_cost_right', 'id_right', 'address_right', 'area_value_right', 'kvartal_right', 
-        'fid_right', 'kol_mest_right', 'okn_right', 'szz_right', 'samovol_right', 'rental_right']
+        'fid_right', 'kol_mest_right', 'okn_right', 'szz_right', 'samovol_right', 'rental_right', 'total_index_right']
     )
     int_oks = int_oks.rename(oks_dict, axis=1)
+
     int_oks['total_index'] = calculate_criteria(int_oks, criteria, 'oks')
     oks_included = int_oks.query("total_index >= 0.5")
     oks_discussed = int_oks.query("0.19 <= total_index < 0.5")
-    print(len(zu_included), len(oks_included))
+    oks_discussed['layer_name'] = 'oks'
 
     logger.info('int_zu : %s. included: %s, %s discussed' % (int_zu.shape, len(zu_included), len(zu_discussed)))
     logger.info('int_oks : %s. included: %s, %s discussed' % (int_oks.shape, len(oks_included), len(oks_discussed)))
     
     #собираем сдисолвленный слой из геометрии и вычисленных атрибутов
-    zu_included['fid'] = zu_included['fid'].astype('int64')
-    #zu_included.to_file(Path(Config.UPLOAD_FOLDER, 'output_zu.gpkg'), driver="GPKG")
-    oks['fid'] = oks['fid'].astype('int64')
-    oks['total_index'] = calculate_criteria(oks, criteria, 'oks')
-    #oks.to_file(Path(Config.UPLOAD_FOLDER, 'output_oks.gpkg'), driver="GPKG")
-
     if len(zu_included) > 0:
         krt = dissolve_geometry(zu_included)
-        print('krt', krt.shape)
-        #krt['zu_list'] = [parcels_in_boundaries(x, zu_included) for x in krt['geometry']]
-        #krt['oks_list'] = [parcels_in_boundaries(x, oks_included) for x in krt['geometry']]
-        #посчитать площадь крт
     else:
         krt = gpd.GeoDataFrame({'geometry':[]})
     zu_list = zu_included['cadnum'].dropna().to_list()
@@ -207,7 +203,6 @@ def return_layer(layer_name):
         return {}
     if layer_name in ('zu', 'oks') and len(data) > 0:
         cn_list = "('%s')" % data[0] if len(data) == 1 else str(tuple(data))
-        print(layer_name)
         layer = gpd.read_postgis("""
             select *, '%s' as layer_name from gpzu_ninja.%s where cadnum in %s
         """ % (layer_name, layer_name, cn_list), ENGINE, geom_col='geometry', crs=4326)

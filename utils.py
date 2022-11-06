@@ -37,9 +37,6 @@ def get_logger(name):
 
 
 def calculate_criteria(gdf, criteria, parcel_type):
-    for k, v in criteria.items():
-        for key, value in v.items():
-            criteria[k][key] = int(value)/100
     l = criteria['living']
     n_l = criteria['non_living']
     if parcel_type == 'zu':
@@ -75,12 +72,6 @@ def calculate_criteria(gdf, criteria, parcel_type):
         )
 
         total_index = Series(total_living + total_labour + total_rights)
-
-        gdf['total_living'] = total_living
-        gdf['total_labour'] = total_labour
-        gdf['total_rights'] = total_rights
-        gdf['total_index'] = total_index
-        gdf.to_excel(Path(Config.UPLOAD_FOLDER, 'output_oks.xlsx'))
     
     return total_index
 
