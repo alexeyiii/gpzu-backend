@@ -8,3 +8,7 @@ passlib==1.7.4
 python-dotenv==0.19.2
 SQLAlchemy==1.4.32
 Werkzeug==2.0.3
+psycopg2
+rtree
+xlsxwriter
+openpyxl

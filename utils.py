@@ -1,13 +1,25 @@
 import logging
-import csv
 import numpy as np
+from datetime import datetime
 from shapely.ops import unary_union
 from shapely.geometry import Polygon, MultiPolygon
-from geopandas import GeoDataFrame, sjoin
-from pandas import Series
-
-from config import Config
+from geopandas import GeoDataFrame, sjoin, read_postgis
+from pandas import Series, DataFrame, ExcelWriter
+from config import Config, ENGINE
 from pathlib import Path
+import xlsxwriter
+
+
+title = 'Обзор сформированного КРТ'
+property_t = {'0': 'информация о собственности отсутствует', '1': 'Москва', '2': 'РФ', '3': 'Иная', '5':'Неразграниченная'}
+fields_dict =  {
+    'cadnum': 'Кад.номер', 'has_effecct': 'Признак аренды', 'property_t': 'Собственность', 
+    'shape_area': 'Площадь', 'kvartal_cn': 'Кад.квартал', 'cad_cost': 'Кад.стоимость', 
+    'category_type': 'Категория земель', 'address': 'Адрес', 'util_by_doc': 'По документу', 'purpose_name': 'ВРИ'
+}
+zu_fields = ['cadnum', 'has_effecct', 'property_t', 'shape_area', 'kvartal_cn', 'cad_cost', 'category_type', 'address', 'util_by_doc']
+oks_fields = ['cadnum', 'shape_area', 'kvartal_cn', 'cad_cost', 'category_type', 'address', 'purpose_name']
+
 
 def get_logger(name):
     logger = logging.getLogger(name)
@@ -100,3 +112,43 @@ def parcels_in_boundaries(krt_polygon, parcels):
 def list_to_string(l):
     l = l.dropna()
     return ", ".join(l) if type(l) == list else ", ".join(l.tolist())
+
+
+def set_property(row):
+    value = str(row['property_t'])
+    try:
+        return property_t[value]
+    except:
+        return 'информация о собственности отсутствует'
+
+
+def make_pdf(zu_list, oks_list):
+    if len(zu_list) == 0:
+        return
+    zu_list = "('%s')" % zu_list[0] if len(zu_list) == 1 else str(tuple(zu_list))
+
+    zu = read_postgis("""
+        select * from gpzu_ninja.zu where cadnum in %s
+    """ % (zu_list), ENGINE, geom_col='geometry', crs=4326).to_crs(3857)
+
+    oks_attrs = DataFrame()
+    if len(oks_list) > 0:
+        oks_list = "('%s')" % oks_list[0] if len(oks_list) == 1 else str(tuple(oks_list))
+        oks = read_postgis("""
+            select * from gpzu_ninja.zu where cadnum in %s
+        """ % (oks_list), ENGINE, geom_col='geometry', crs=4326).to_crs(3857)
+        oks_attrs = oks.drop(columns=["geometry"])
+
+    zu_attrs = zu.drop(columns=["geometry"])
+
+    final = {
+       'ЗУ в КРТ' : zu_attrs[zu_fields].rename(fields_dict, axis=1),
+       'ОКС в КРТ' : oks_attrs.rename(fields_dict, axis=1),
+    }
+    filename = f'report_krt_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+    writer = ExcelWriter(Config.UPLOAD_FOLDER + '/' + filename, engine='xlsxwriter')
+    for sheet_name in final:
+        final[sheet_name].to_excel(writer, sheet_name= str(sheet_name))
+    writer.save()
+
+    return filename
